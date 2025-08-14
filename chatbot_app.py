@@ -17,16 +17,23 @@ def load_models():
     """
     RAG 시스템에 필요한 모델과 벡터 DB를 로드합니다.
     """
+    # Hugging Face 토큰을 secrets에서 가져옵니다.
+    # 'HUGGINGFACEHUB_API_TOKEN'은 secrets.toml에 설정한 키와 일치해야 합니다.
+    hf_token = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
+
     embedding_model_name = "jhgan/ko-sbert-nli"
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
 
     model_name = "mistralai/Mistral-7B-Instruct-v0.2"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # 수정: from_pretrained 함수에 토큰을 명시적으로 전달합니다.
+    tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
         torch_dtype=torch.float16,
-        low_cpu_mem_usage=True
+        low_cpu_mem_usage=True,
+        # 수정: from_pretrained 함수에 토큰을 명시적으로 전달합니다.
+        token=hf_token
     )
     pipe = pipeline(
         "text-generation",
@@ -35,7 +42,9 @@ def load_models():
         max_new_tokens=512,
         do_sample=True,
         temperature=0.5,
-        top_p=0.95
+        top_p=0.95,
+        # 수정: pipeline에도 토큰을 전달합니다.
+        token=hf_token
     )
     llm = HuggingFacePipeline(pipeline=pipe)
     
@@ -43,6 +52,7 @@ def load_models():
     return llm, vector_db
 
 # 2. RAG 체인 설정 (단 한 번만 실행)
+# 수정: llm과 vector_db 인자명 앞에 모두 밑줄('_')을 붙여 캐싱에서 제외합니다.
 @st.cache_resource
 def setup_rag_chain(_llm, _vector_db):
     """
@@ -86,17 +96,14 @@ if prompt := st.chat_input("질문을 입력해주세요."):
 
     with st.chat_message("assistant"):
         with st.spinner("생각 중..."):
-            # RAG 체인으로 질문에 대한 답변을 생성합니다.
             full_response = rag_chain.invoke({"query": prompt})["result"]
 
-            # 수정: '답변:' 이후의 내용만 추출합니다.
             answer_prefix = "답변:"
             if answer_prefix in full_response:
                 final_response = full_response.split(answer_prefix, 1)[1].strip()
             else:
                 final_response = full_response.strip()
 
-            # 생성된 답변을 화면에 표시합니다.
             st.markdown(final_response)
     
     st.session_state.messages.append({"role": "assistant", "content": final_response})
