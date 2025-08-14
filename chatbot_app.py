@@ -18,21 +18,37 @@ def load_models():
     RAG 시스템에 필요한 모델과 벡터 DB를 로드합니다.
     """
     # Hugging Face 토큰을 secrets에서 가져옵니다.
-    # 'HUGGINGFACEHUB_API_TOKEN'은 secrets.toml에 설정한 키와 일치해야 합니다.
     hf_token = st.secrets["HUGGINGFACEHUB_API_TOKEN"]
 
     embedding_model_name = "jhgan/ko-sbert-nli"
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model_name)
 
+    # faiss_index가 없으면 새로 생성하는 로직 추가
+    faiss_index_path = "faiss_index"
+    if not os.path.exists(faiss_index_path):
+        st.info("faiss_index가 없어 새로 생성합니다. 잠시만 기다려 주세요.")
+        dummy_texts = [
+            "머신러닝은 인공지능의 한 분야로, 데이터로부터 학습하여 예측을 수행하는 알고리즘을 개발하는 학문이다.",
+            "딥러닝은 머신러닝의 하위 분야로, 인공 신경망을 사용하여 복잡한 패턴을 학습한다.",
+            "자연어 처리(NLP)는 컴퓨터가 인간의 언어를 이해하고 생성하도록 하는 기술이다.",
+            "지도학습은 정답 라벨이 있는 데이터를 사용하여 모델을 훈련시키는 방법이다. 대표적인 예로 분류와 회귀가 있다.",
+            "비지도학습은 정답 라벨이 없는 데이터를 사용하여 데이터의 구조나 패턴을 찾는 방법이다. 클러스터링이 대표적인 예이다.",
+            "강화학습은 에이전트가 환경과 상호작용하며 보상을 최대화하는 행동을 학습하는 방법이다. 게임 AI에 주로 사용된다."
+        ]
+        vector_db = FAISS.from_texts(dummy_texts, embeddings)
+        vector_db.save_local(faiss_index_path)
+        st.success("faiss_index 생성 완료!")
+    else:
+        vector_db = FAISS.load_local(faiss_index_path, embeddings, allow_dangerous_deserialization=True)
+
+    # LLM 로드
     model_name = "mistralai/Mistral-7B-Instruct-v0.2"
-    # 수정: from_pretrained 함수에 토큰을 명시적으로 전달합니다.
     tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         device_map="auto",
         torch_dtype=torch.float16,
         low_cpu_mem_usage=True,
-        # 수정: from_pretrained 함수에 토큰을 명시적으로 전달합니다.
         token=hf_token
     )
     pipe = pipeline(
@@ -43,16 +59,13 @@ def load_models():
         do_sample=True,
         temperature=0.5,
         top_p=0.95,
-        # 수정: pipeline에도 토큰을 전달합니다.
         token=hf_token
     )
     llm = HuggingFacePipeline(pipeline=pipe)
     
-    vector_db = FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
     return llm, vector_db
 
 # 2. RAG 체인 설정 (단 한 번만 실행)
-# 수정: llm과 vector_db 인자명 앞에 모두 밑줄('_')을 붙여 캐싱에서 제외합니다.
 @st.cache_resource
 def setup_rag_chain(_llm, _vector_db):
     """
@@ -97,7 +110,6 @@ if prompt := st.chat_input("질문을 입력해주세요."):
     with st.chat_message("assistant"):
         with st.spinner("생각 중..."):
             full_response = rag_chain.invoke({"query": prompt})["result"]
-
             answer_prefix = "답변:"
             if answer_prefix in full_response:
                 final_response = full_response.split(answer_prefix, 1)[1].strip()
