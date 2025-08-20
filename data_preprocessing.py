@@ -61,7 +61,7 @@ def preprocess_and_chunk_text(text, chunk_size=500, overlap_size=100):
 
 # 예시 URL
 # 실제 머신러닝 관련 문서 URL로 대체해야 합니다.
-url = "https://en.wikipedia.org/wiki/Machine_learning"
+url = "https://ko.wikipedia.org/wiki/%EA%B8%B0%EA%B3%84_%ED%95%99%EC%8A%B5"
 # 지정된 URL에서 텍스트를 가져옵니다.
 data = get_text_from_url(url)
 
